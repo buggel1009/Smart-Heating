@@ -1,0 +1,12 @@
+{
+  "domain": "smart_heating",
+  "name": "Smart Heating (SONOFF TRVZB)",
+  "documentation": "https://github.com/YOUR_USERNAME/smart-heating-hacs",
+  "issue_tracker": "https://github.com/YOUR_USERNAME/smart-heating-hacs/issues",
+  "dependencies": ["frontend", "websocket_api", "http"],
+  "codeowners": [],
+  "requirements": [],
+  "version": "0.1.0",
+  "config_flow": true,
+  "iot_class": "local_push"
+}

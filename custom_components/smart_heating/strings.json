@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Smart Heating einrichten",
+        "description": "Richtet das Smart Heating System für SONOFF TRVZB Thermostate ein. Räume und Zeitpläne werden danach über die Seitenleiste konfiguriert."
+      }
+    },
+    "abort": {
+      "already_configured": "Smart Heating ist bereits eingerichtet."
+    },
+    "error": {}
+  }
+}
