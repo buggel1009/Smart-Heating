@@ -86,7 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "smart-heating-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.2.3",
+                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.2.4",
             }
         },
         require_admin=False,
