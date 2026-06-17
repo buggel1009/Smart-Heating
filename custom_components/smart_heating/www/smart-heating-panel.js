@@ -751,13 +751,17 @@ class SmartHeatingPanel extends HTMLElement {
   }
 
   _heatingState(room) {
-    // Returns 'heat', 'idle', or null based on running_state attribute of climate entity
     const climate = room.climate_entity && this._hass.states[room.climate_entity];
     if (!climate) return null;
+    // hvac_action is the HA standard attribute (heating/idle/off)
+    const action = climate.attributes.hvac_action;
+    if (action === 'heating') return 'heat';
+    if (action === 'idle' || action === 'off') return 'idle';
+    // Z2M may expose running_state as a separate attribute
     const rs = climate.attributes.running_state;
     if (rs === 'heat') return 'heat';
     if (rs === 'idle' || rs === 'off') return 'idle';
-    // Fallback: derive from climate state
+    // Last resort: off state = idle
     if (climate.state === 'off') return 'idle';
     return null;
   }
@@ -822,7 +826,7 @@ class SmartHeatingPanel extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           ${ICON.radiator}
           <h1>Smart Heating</h1>
-          <span style="font-size:11px;opacity:.6;font-weight:400">v0.1.7</span>
+          <span style="font-size:11px;opacity:.6;font-weight:400">v0.1.8</span>
         </div>
         <button class="btn-settings" title="Einstellungen">${ICON.settings}</button>
       </div>
