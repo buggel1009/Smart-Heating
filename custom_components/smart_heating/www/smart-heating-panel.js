@@ -956,7 +956,7 @@ class SmartHeatingPanel extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           ${ICON.radiator}
           <h1>Smart Heating</h1>
-          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.2</span>
+          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.3</span>
         </div>
         <button class="btn-settings" title="Einstellungen">${ICON.settings}</button>
       </div>
@@ -1210,7 +1210,7 @@ class SmartHeatingPanel extends HTMLElement {
       const bars = daySlots.map(s => {
         const left  = (timeToMins(s.start) / 1440 * 100).toFixed(2);
         const width = ((timeToMins(s.end) - timeToMins(s.start)) / 1440 * 100).toFixed(2);
-        return `<div class="timeline-slot" style="left:${left}%;width:${width}%" title="${s.start}–${s.end} · ${fmtTemp(s.temperature)}"></div>`;
+        return `<div class="timeline-slot" style="left:${left}%;width:${width}%" title="${s.start}–${s.end} · ${slotModeLabel(s)}"></div>`;
       }).join('');
       return `<div class="timeline-row">
         <span class="timeline-day">${day}</span>
@@ -1227,11 +1227,11 @@ class SmartHeatingPanel extends HTMLElement {
   _slotItemHTML(slot) {
     const dayChips = DAYS_SHORT.map((d, i) =>
       `<div class="slot-day-chip ${slot.days.includes(i) ? '' : 'inactive'}">${d}</div>`).join('');
-    return `<div class="slot-item" data-slot-id="${slot.id}">
+    return `<div class="slot-item" data-slot-id="${slot.id}" style="cursor:pointer">
       <div class="slot-days">${dayChips}</div>
-      <div class="slot-info">
+      <div class="slot-info" style="flex:1">
         <div class="slot-time">${slot.start} – ${slot.end}</div>
-        <div class="slot-temp">${fmtTemp(slot.temperature)}</div>
+        <div class="slot-temp">${slotModeLabel(slot)}</div>
       </div>
       <button class="slot-delete" data-slot-id="${slot.id}" title="Löschen">${ICON.delete}</button>
     </div>`;
