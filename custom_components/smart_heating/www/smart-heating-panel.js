@@ -511,6 +511,48 @@ const CSS = `
     animation: spin .7s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Log view ── */
+  .log-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 16px;
+    background: var(--card-background-color, #fff);
+    border-bottom: 1px solid var(--divider-color, #eee);
+    flex-shrink: 0;
+  }
+  .log-toolbar-status { flex: 1; font-size: 12px; color: var(--secondary-text-color); }
+  .log-refresh-btn {
+    font-size: 12px; padding: 4px 10px;
+    border: 1px solid var(--divider-color, #e0e0e0);
+    border-radius: 4px; cursor: pointer;
+    background: transparent; color: var(--primary-text-color);
+  }
+  .log-refresh-btn:hover { background: var(--secondary-background-color, #f5f5f5); }
+  .log-list {
+    flex: 1; overflow-y: auto;
+    padding: 0 16px 16px;
+    font-family: 'Roboto Mono', 'Courier New', monospace;
+  }
+  .log-entry {
+    display: flex; gap: 8px; align-items: baseline;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--divider-color, #eee);
+    font-size: 12px;
+  }
+  .log-entry:last-child { border-bottom: none; }
+  .log-ts { color: var(--secondary-text-color); flex-shrink: 0; font-size: 11px; }
+  .log-level {
+    font-size: 10px; font-weight: 700; flex-shrink: 0;
+    padding: 1px 5px; border-radius: 3px; letter-spacing: .5px;
+  }
+  .log-level-info    { background: #e3f2fd; color: #1565c0; }
+  .log-level-warning { background: #fff3e0; color: #e65100; }
+  .log-level-error   { background: #ffebee; color: #c62828; }
+  .log-msg { flex: 1; word-break: break-word; }
+  .log-empty {
+    text-align: center; color: var(--secondary-text-color);
+    padding: 48px 16px; font-size: 14px;
+  }
 `;
 
 // ── Icons (inline SVG strings) ────────────────────────────────────────────────
@@ -524,6 +566,7 @@ const ICON = {
   radiator: `<svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M4 19H2v-2h2V7H2V5h2V3h2v2h2V3h2v2h2V3h2v2h2V3h2v2h2V3h2v2h-2v12h2v2h-2v2h-2v-2h-2v2h-2v-2h-2v2h-2v-2H8v2H6v-2H4v0zm2-2h2V7H6v10zm4 0h2V7h-2v10zm4 0h2V7h-2v10z"/></svg>`,
   window:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-1 17H5V5h14v14zm-6-2v-5h-2v5H7v-2h2v-1H7v-2h2V9h2v1h2V9h2v2h-2v1h2v2h-2v1h2v2h-6z"/></svg>`,
   boost:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 .67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"/></svg>`,
+  logs:     `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-7 14H7v-2h5v2zm5-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>`,
 };
 
 // ── Main Panel Element ─────────────────────────────────────────────────────────
@@ -537,9 +580,10 @@ class SmartHeatingPanel extends HTMLElement {
     this._rooms   = {};
     this._schedules = {};
     this._global  = { mode: 'auto', presence_entities: [], weather_entity: null, outdoor_temp_sensor: null, away_temp: 16 };
-    this._view    = 'dashboard';   // 'dashboard' | 'room'
+    this._view    = 'dashboard';   // 'dashboard' | 'room' | 'logs'
     this._roomId  = null;
     this._modal   = null;          // 'room-edit' | 'slot-edit' | null
+    this._logsRefreshId = null;
     this._editRoom   = null;       // room being edited
     this._editSlot   = null;       // slot being edited
     this._editSlotRoomId = null;
@@ -590,15 +634,29 @@ class SmartHeatingPanel extends HTMLElement {
   // ── Navigation ────────────────────────────────────────────────────────────
 
   _goRoom(roomId) {
+    this._clearLogsRefresh();
     this._view   = 'room';
     this._roomId = roomId;
     this._render();
   }
 
   _goDashboard() {
+    this._clearLogsRefresh();
     this._view   = 'dashboard';
     this._roomId = null;
     this._render();
+  }
+
+  _goLogs() {
+    this._view = 'logs';
+    this._render();
+  }
+
+  _clearLogsRefresh() {
+    if (this._logsRefreshId) {
+      clearInterval(this._logsRefreshId);
+      this._logsRefreshId = null;
+    }
   }
 
   _openSettings() {
@@ -922,6 +980,7 @@ class SmartHeatingPanel extends HTMLElement {
 
     if (this._view === 'dashboard') this._renderDashboard(root);
     else if (this._view === 'room') this._renderRoomDetail(root);
+    else if (this._view === 'logs') this._renderLogs(root);
   }
 
   // ── Dashboard ─────────────────────────────────────────────────────────────
@@ -935,8 +994,9 @@ class SmartHeatingPanel extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           ${ICON.radiator}
           <h1>Smart Heating</h1>
-          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.5</span>
+          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.6</span>
         </div>
+        <button class="btn-logs" title="Entwickler-Logs">${ICON.logs}</button>
         <button class="btn-settings" title="Einstellungen">${ICON.settings}</button>
       </div>
 
@@ -956,12 +1016,82 @@ class SmartHeatingPanel extends HTMLElement {
     root.appendChild(wrap);
 
     // Events
+    wrap.querySelector('.btn-logs').addEventListener('click', () => this._goLogs());
     wrap.querySelector('.btn-settings').addEventListener('click', () => this._openSettings());
     wrap.querySelector('.fab').addEventListener('click', () => this._openRoomEditor());
     wrap.querySelectorAll('.mode-btn').forEach(btn =>
       btn.addEventListener('click', () => this._setGlobalMode(btn.dataset.mode)));
     wrap.querySelectorAll('.room-card').forEach(card =>
       card.addEventListener('click', () => this._goRoom(card.dataset.roomId)));
+  }
+
+  // ── Logs view ────────────────────────────────────────────────────────────
+
+  _renderLogs(root) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden';
+    wrap.innerHTML = `
+      <div class="sh-header">
+        <button class="sh-back">${ICON.back}</button>
+        <h1>Entwickler-Logs</h1>
+        <button class="btn-clear-logs" title="Logs leeren" style="font-size:18px">${ICON.delete}</button>
+      </div>
+      <div class="log-toolbar">
+        <span class="log-toolbar-status" id="log-status">Lade…</span>
+        <button class="log-refresh-btn">↻ Aktualisieren</button>
+      </div>
+      <div class="log-list" id="log-list">
+        <div class="log-empty">Lade Logs…</div>
+      </div>
+    `;
+    root.appendChild(wrap);
+
+    const listEl   = wrap.querySelector('#log-list');
+    const statusEl = wrap.querySelector('#log-status');
+
+    const load = async () => {
+      try {
+        const logs = await this._hass.callWS({ type: 'smart_heating/get_logs' });
+        if (this._view !== 'logs') return;
+        if (!logs.length) {
+          listEl.innerHTML = '<div class="log-empty">Keine Log-Einträge vorhanden.</div>';
+          statusEl.textContent = '0 Einträge';
+          return;
+        }
+        listEl.innerHTML = [...logs].reverse().map(e => {
+          const levelCls   = e.level === 'warning' ? 'log-level-warning'
+                           : e.level === 'error'   ? 'log-level-error'
+                           :                         'log-level-info';
+          const levelLabel = e.level === 'warning' ? 'WARN'
+                           : e.level === 'error'   ? 'ERR'
+                           :                         'INFO';
+          const ts = e.ts.replace('T', ' ');
+          return `<div class="log-entry">
+            <span class="log-ts">${ts}</span>
+            <span class="log-level ${levelCls}">${levelLabel}</span>
+            <span class="log-msg">${e.msg}</span>
+          </div>`;
+        }).join('');
+        const cnt = logs.length;
+        statusEl.textContent = `${cnt} Eintr${cnt === 1 ? 'ag' : 'äge'} · Auto-Refresh`;
+      } catch {
+        statusEl.textContent = 'Fehler beim Laden';
+      }
+    };
+
+    load();
+
+    this._logsRefreshId = setInterval(() => {
+      if (this._view === 'logs') load();
+      else this._clearLogsRefresh();
+    }, 5000);
+
+    wrap.querySelector('.sh-back').addEventListener('click', () => this._goDashboard());
+    wrap.querySelector('.log-refresh-btn').addEventListener('click', () => load());
+    wrap.querySelector('.btn-clear-logs').addEventListener('click', async () => {
+      await this._hass.callWS({ type: 'smart_heating/clear_logs' });
+      load();
+    });
   }
 
   _emptyState() {

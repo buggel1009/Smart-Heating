@@ -62,7 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data.update(raw)
         data.setdefault("global", dict(_DEFAULT_DATA["global"]))
 
-    hass.data[DOMAIN] = {"store": store, "data": data}
+    hass.data[DOMAIN] = {"store": store, "data": data, "logs": []}
 
     # ── Static files ──────────────────────────────────────────────────────────
     www_path = os.path.join(os.path.dirname(__file__), "www")
@@ -86,14 +86,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "smart-heating-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.2.5",
+                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.2.6",
             }
         },
         require_admin=False,
     )
 
     # ── Scheduler ─────────────────────────────────────────────────────────────
-    scheduler = SmartHeatingScheduler(hass, lambda: hass.data[DOMAIN]["data"])
+    def _append_log(level: str, message: str) -> None:
+        from datetime import datetime
+        buf: list = hass.data[DOMAIN]["logs"]
+        buf.append({"ts": datetime.now().isoformat(timespec="seconds"), "level": level, "msg": message})
+        if len(buf) > 100:
+            buf.pop(0)
+
+    scheduler = SmartHeatingScheduler(hass, lambda: hass.data[DOMAIN]["data"], _append_log)
     hass.data[DOMAIN]["scheduler"] = scheduler
     await scheduler.async_start()
 
@@ -290,6 +297,19 @@ def _register_ws_api(hass: HomeAssistant) -> None:
     async def ws_get_boost_states(hass, connection, msg):
         connection.send_result(msg["id"], _scheduler(hass).get_boost_states())
 
+    # ── get_logs ───────────────────────────────────────────────────────────
+
+    @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/get_logs"})
+    @websocket_api.async_response
+    async def ws_get_logs(hass, connection, msg):
+        connection.send_result(msg["id"], list(hass.data[DOMAIN]["logs"]))
+
+    @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/clear_logs"})
+    @websocket_api.async_response
+    async def ws_clear_logs(hass, connection, msg):
+        hass.data[DOMAIN]["logs"].clear()
+        connection.send_result(msg["id"], {"success": True})
+
     # ── Register all ──────────────────────────────────────────────────────
 
     for handler in (
@@ -302,5 +322,7 @@ def _register_ws_api(hass: HomeAssistant) -> None:
         ws_set_boost,
         ws_cancel_boost,
         ws_get_boost_states,
+        ws_get_logs,
+        ws_clear_logs,
     ):
         async_register_command(hass, handler)

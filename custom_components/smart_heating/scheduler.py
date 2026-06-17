@@ -29,9 +29,11 @@ class SmartHeatingScheduler:
         self,
         hass: HomeAssistant,
         get_data: Callable[[], dict[str, Any]],
+        log_func: Callable[[str, str], None] | None = None,
     ) -> None:
         self._hass = hass
         self._get_data = get_data
+        self._log = log_func or (lambda level, msg: None)
 
         # room_id → datetime when boost ends
         self._boost: dict[str, datetime] = {}
@@ -114,13 +116,17 @@ class SmartHeatingScheduler:
     def activate_boost(self, room_id: str, duration_minutes: int) -> None:
         """Activate boost mode for a room for the given number of minutes."""
         self._boost[room_id] = datetime.now() + timedelta(minutes=duration_minutes)
+        room_name = self._get_data().get("rooms", {}).get(room_id, {}).get("name", room_id)
         _LOGGER.info("Boost ON: room=%s, duration=%d min", room_id, duration_minutes)
+        self._log("info", f"🔥 Boost AN: {room_name} für {duration_minutes} Min")
         self._hass.async_create_task(self._async_evaluate_room_by_id(room_id))
 
     def cancel_boost(self, room_id: str) -> None:
         """Cancel boost mode for a room."""
         self._boost.pop(room_id, None)
+        room_name = self._get_data().get("rooms", {}).get(room_id, {}).get("name", room_id)
         _LOGGER.info("Boost OFF: room=%s", room_id)
+        self._log("info", f"⏹ Boost AUS: {room_name}")
         self._hass.async_create_task(self._async_evaluate_room_by_id(room_id))
 
     def get_boost_states(self) -> dict[str, str | None]:
@@ -157,11 +163,13 @@ class SmartHeatingScheduler:
             data = self._get_data()
             room = data.get("rooms", {}).get(room_id, {})
             delay_secs = float(room.get("window_open_delay", 5)) * 60
+            room_name = room.get("name", room_id)
 
             _LOGGER.debug(
                 "Window %s opened → heating pause in %.0f s (room=%s)",
                 entity_id, delay_secs, room_id,
             )
+            self._log("warning", f"🪟 Fenster offen: {room_name} — Heizpause in {int(delay_secs/60)} Min")
 
             @callback
             def _on_delay_expired(_now, _room_id=room_id) -> None:
@@ -171,7 +179,9 @@ class SmartHeatingScheduler:
                 self._hass, delay_secs, _on_delay_expired
             )
         else:  # window closed → restore heating immediately
+            room_name = self._get_data().get("rooms", {}).get(room_id, {}).get("name", room_id)
             _LOGGER.debug("Window %s closed → restoring heating (room=%s)", entity_id, room_id)
+            self._log("info", f"🪟 Fenster zu: {room_name} — Heizung wiederhergestellt")
             self._hass.async_create_task(self._async_evaluate_room_by_id(room_id))
 
     @callback
@@ -179,7 +189,10 @@ class SmartHeatingScheduler:
         """Re-evaluate all rooms when the presence entity changes."""
         new_state = event.data.get("new_state")
         if new_state:
+            entity_id = event.data.get("entity_id", "")
+            status = "🏠 zuhause" if new_state.state == "home" else "🏃 weg"
             _LOGGER.debug("Presence changed to %s → full re-evaluation", new_state.state)
+            self._log("info", f"👤 Anwesenheit: {entity_id} ist {status}")
         self._hass.async_create_task(self._async_evaluate_all())
 
     # ── Core evaluation loop ──────────────────────────────────────────────────
@@ -239,6 +252,7 @@ class SmartHeatingScheduler:
             room.get("name", room_id), climate_entity, target,
             current_target or 0, global_mode,
         )
+        self._log("info", f"🌡️ {room.get('name', room_id)}: {current_target or '?'} → {target} °C (Modus: {global_mode})")
         await self._hass.services.async_call(
             "climate",
             "set_temperature",
