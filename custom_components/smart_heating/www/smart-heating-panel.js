@@ -752,8 +752,8 @@ class SmartHeatingPanel extends HTMLElement {
     const climate = room.climate_entity && this._hass.states[room.climate_entity];
     if (!climate) return null;
     const a = climate.attributes;
-    // Z2M exposes valve position under different attribute names depending on firmware
-    const pos = a.position ?? a.valve_position ?? a.pi_heating_demand ?? null;
+    // SONOFF TRVZB via Z2M: valve_opening_degree is the primary attribute name
+    const pos = a.valve_opening_degree ?? a.position ?? a.valve_position ?? a.pi_heating_demand ?? null;
     if (pos == null) return null;
     return Math.round(Number(pos));
   }
