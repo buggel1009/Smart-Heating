@@ -9,6 +9,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.components.frontend import async_register_built_in_panel, async_remove_panel
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.websocket_api import async_register_command
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -64,9 +65,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # ── Static files ──────────────────────────────────────────────────────────
     www_path = os.path.join(os.path.dirname(__file__), "www")
-    hass.http.register_static_path(
-        f"/{DOMAIN}-panel", www_path, cache_headers=False
-    )
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(
+            url_path=f"/{DOMAIN}-panel",
+            path=www_path,
+            cache_headers=False,
+        )
+    ])
 
     # ── Sidebar panel ─────────────────────────────────────────────────────────
     async_register_built_in_panel(
