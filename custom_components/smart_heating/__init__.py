@@ -96,6 +96,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["scheduler"] = scheduler
     await scheduler.async_start()
 
+    # ── Select platform (global mode entity for automations) ─────────────────
+    await hass.config_entries.async_forward_entry_setups(entry, ["select"])
+
     # ── WebSocket API ─────────────────────────────────────────────────────────
     _register_ws_api(hass)
 
@@ -108,6 +111,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     scheduler: SmartHeatingScheduler | None = hass.data[DOMAIN].get("scheduler")
     if scheduler:
         await scheduler.async_stop()
+    await hass.config_entries.async_unload_platforms(entry, ["select"])
     async_remove_panel(hass, PANEL_URL)
     hass.data.pop(DOMAIN, None)
     return True
