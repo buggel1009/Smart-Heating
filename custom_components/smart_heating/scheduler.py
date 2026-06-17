@@ -313,13 +313,25 @@ class SmartHeatingScheduler:
         return None
 
     def _get_outdoor_temp(self, data: dict) -> float | None:
-        weather_entity = data.get("global", {}).get("weather_entity")
-        if not weather_entity:
-            return None
-        state = self._hass.states.get(weather_entity)
-        if not state:
-            return None
-        return state.attributes.get("temperature")
+        g = data.get("global", {})
+        # Try weather entity first (reads temperature attribute)
+        weather_entity = g.get("weather_entity")
+        if weather_entity:
+            state = self._hass.states.get(weather_entity)
+            if state:
+                t = state.attributes.get("temperature")
+                if t is not None:
+                    return float(t)
+        # Fallback: dedicated outdoor temperature sensor (reads state directly)
+        sensor_entity = g.get("outdoor_temp_sensor")
+        if sensor_entity:
+            state = self._hass.states.get(sensor_entity)
+            if state and state.state not in ("unavailable", "unknown"):
+                try:
+                    return float(state.state)
+                except ValueError:
+                    pass
+        return None
 
     @staticmethod
     def _apply_outdoor_compensation(temp: float, outdoor_temp: float | None) -> float:

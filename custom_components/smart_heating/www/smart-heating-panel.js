@@ -593,6 +593,97 @@ class SmartHeatingPanel extends HTMLElement {
     this._render();
   }
 
+  _openSettings() {
+    this._modal = 'settings';
+    this._renderModal();
+  }
+
+  _settingsHTML() {
+    const g = this._global;
+    const states = this._hass.states;
+
+    const weathers  = Object.keys(states).filter(id => id.startsWith('weather.')).sort();
+    const tempSensors = Object.keys(states).filter(id =>
+      id.startsWith('sensor.') && states[id].attributes.unit_of_measurement === '°C'
+    ).sort();
+    const persons   = Object.keys(states).filter(id => id.startsWith('person.')).sort();
+
+    const option = (list, selected, placeholder) =>
+      `<option value="">${placeholder}</option>` +
+      list.map(id => `<option value="${id}" ${id === selected ? 'selected' : ''}>${id}</option>`).join('');
+
+    const awayTemp = g.away_temp ?? 16;
+
+    return `<div class="modal-sheet">
+      <div class="modal-title">
+        Globale Einstellungen
+        <button class="modal-close">✕</button>
+      </div>
+
+      <div class="form-group">
+        <label>Außentemperatur — Wetter-Entity (weather.*)</label>
+        <select id="set-weather">
+          ${option(weathers, g.weather_entity, '— Keine —')}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Außentemperatur — Sensor (sensor.*) — Alternativ zu Wetter</label>
+        <select id="set-outdoor-sensor">
+          ${option(tempSensors, g.outdoor_temp_sensor, '— Keinen —')}
+        </select>
+      </div>
+
+      <p style="font-size:12px;color:var(--secondary-text-color);margin:0 0 12px">
+        💡 Bei ≥18 °C Außentemperatur wird das Ziel um 2 °C gesenkt. Bei &lt;0 °C um 0,5 °C erhöht.
+        Wenn beide gesetzt sind, hat die Wetter-Entity Vorrang.
+      </p>
+
+      <div class="divider"></div>
+
+      <div class="form-group">
+        <label>Anwesenheitserkennung — Person-Entity (person.*)</label>
+        <select id="set-presence">
+          ${option(persons, g.presence_entity, '— Keine —')}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Abwesend-Temperatur (°C)</label>
+        <input id="set-away-temp" type="number" step="0.5" min="5" max="25" value="${awayTemp}">
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary modal-cancel">Abbrechen</button>
+        <button class="btn btn-primary modal-save">Speichern</button>
+      </div>
+    </div>`;
+  }
+
+  _bindSettingsEvents(overlay) {
+    overlay.querySelector('.modal-close').addEventListener('click', () => this._closeModal());
+    overlay.querySelector('.modal-cancel').addEventListener('click', () => this._closeModal());
+    overlay.querySelector('.modal-save').addEventListener('click', async () => {
+      const weather        = overlay.querySelector('#set-weather').value        || null;
+      const outdoorSensor  = overlay.querySelector('#set-outdoor-sensor').value || null;
+      const presence       = overlay.querySelector('#set-presence').value       || null;
+      const awayTemp       = parseFloat(overlay.querySelector('#set-away-temp').value);
+
+      try {
+        const res = await this._ws(DOMAIN + '/set_global_mode', {
+          mode:                 this._global.mode,
+          weather_entity:       weather,
+          outdoor_temp_sensor:  outdoorSensor,
+          presence_entity:      presence,
+          away_temp:            isNaN(awayTemp) ? 16 : awayTemp,
+        });
+        this._global = res.global;
+        this._closeModal();
+        this._render();
+      } catch(e) { alert('Fehler beim Speichern: ' + e.message); }
+    });
+  }
+
   _openRoomEditor(room = null) {
     this._editRoom = room ? { ...room } : {
       id: null, name: '', climate_entity: '', temp_sensor: '',
@@ -826,7 +917,7 @@ class SmartHeatingPanel extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           ${ICON.radiator}
           <h1>Smart Heating</h1>
-          <span style="font-size:11px;opacity:.6;font-weight:400">v0.1.8</span>
+          <span style="font-size:11px;opacity:.6;font-weight:400">v0.1.9</span>
         </div>
         <button class="btn-settings" title="Einstellungen">${ICON.settings}</button>
       </div>
@@ -847,7 +938,7 @@ class SmartHeatingPanel extends HTMLElement {
     root.appendChild(wrap);
 
     // Events
-    wrap.querySelector('.btn-settings').addEventListener('click', () => this._openRoomEditor());
+    wrap.querySelector('.btn-settings').addEventListener('click', () => this._openSettings());
     wrap.querySelector('.fab').addEventListener('click', () => this._openRoomEditor());
     wrap.querySelectorAll('.mode-btn').forEach(btn =>
       btn.addEventListener('click', () => this._setGlobalMode(btn.dataset.mode)));
@@ -1124,6 +1215,10 @@ class SmartHeatingPanel extends HTMLElement {
       overlay.innerHTML = this._slotEditorHTML();
       this.shadowRoot.appendChild(overlay);
       this._bindSlotEditorEvents(overlay);
+    } else if (this._modal === 'settings') {
+      overlay.innerHTML = this._settingsHTML();
+      this.shadowRoot.appendChild(overlay);
+      this._bindSettingsEvents(overlay);
     }
 
     overlay.addEventListener('click', (e) => {

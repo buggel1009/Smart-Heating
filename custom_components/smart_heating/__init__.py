@@ -40,6 +40,7 @@ _DEFAULT_DATA: dict[str, Any] = {
         "mode": "auto",
         "presence_entity": None,
         "weather_entity": None,
+        "outdoor_temp_sensor": None,
         "away_temp": 16.0,
     },
 }
@@ -85,7 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "smart-heating-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.1.8",
+                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.1.9",
             }
         },
         require_admin=False,
@@ -232,6 +233,7 @@ def _register_ws_api(hass: HomeAssistant) -> None:
         vol.Required("mode"): str,
         vol.Optional("presence_entity"): vol.Any(str, None),
         vol.Optional("weather_entity"): vol.Any(str, None),
+        vol.Optional("outdoor_temp_sensor"): vol.Any(str, None),
         vol.Optional("away_temp"): float,
     })
     @websocket_api.async_response
@@ -242,6 +244,8 @@ def _register_ws_api(hass: HomeAssistant) -> None:
             g["presence_entity"] = msg["presence_entity"]
         if "weather_entity" in msg:
             g["weather_entity"] = msg["weather_entity"]
+        if "outdoor_temp_sensor" in msg:
+            g["outdoor_temp_sensor"] = msg["outdoor_temp_sensor"]
         if "away_temp" in msg:
             g["away_temp"] = msg["away_temp"]
         await _save(hass)
