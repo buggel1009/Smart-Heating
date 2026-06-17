@@ -144,9 +144,11 @@ const CSS = `
     font-size: 11px;
     font-weight: 500;
   }
-  .badge-window { background: #e3f2fd; color: #1565c0; }
-  .badge-boost  { background: #fff3e0; color: #e65100; }
-  .badge-off    { background: #f5f5f5; color: #757575; }
+  .badge-window  { background: #e3f2fd; color: #1565c0; }
+  .badge-boost   { background: #fff3e0; color: #e65100; }
+  .badge-off     { background: #f5f5f5; color: #757575; }
+  .badge-heating { background: #fff3e0; color: #e65100; }
+  .badge-idle    { background: #e8f5e9; color: #2e7d32; }
 
   .temp-row {
     display: flex;
@@ -748,12 +750,15 @@ class SmartHeatingPanel extends HTMLElement {
     return Math.max(0, Math.min(100, diff / 3 * 100));
   }
 
-  _valvePosition(room) {
-    // Use dedicated valve entity (number.*_valve_opening_degree from Z2M) as primary source
-    if (room.valve_entity) {
-      const s = this._hass.states[room.valve_entity];
-      if (s && s.state !== 'unavailable') return Math.round(Number(s.state));
-    }
+  _heatingState(room) {
+    // Returns 'heat', 'idle', or null based on running_state attribute of climate entity
+    const climate = room.climate_entity && this._hass.states[room.climate_entity];
+    if (!climate) return null;
+    const rs = climate.attributes.running_state;
+    if (rs === 'heat') return 'heat';
+    if (rs === 'idle' || rs === 'off') return 'idle';
+    // Fallback: derive from climate state
+    if (climate.state === 'off') return 'idle';
     return null;
   }
 
@@ -781,17 +786,12 @@ class SmartHeatingPanel extends HTMLElement {
       if (!card) continue;
       const cur = this._currentTemp(room);
       const tgt = this._targetTemp(room);
-      const curEl     = card.querySelector('.temp-current');
-      const tgtEl     = card.querySelector('.temp-target');
-      const fill      = card.querySelector('.heat-bar-fill');
-      const valveFill = card.querySelector(`[data-valve-fill="${room.id}"]`);
-      const valvePct  = card.querySelector(`[data-valve-pct="${room.id}"]`);
+      const curEl  = card.querySelector('.temp-current');
+      const tgtEl  = card.querySelector('.temp-target');
+      const fill   = card.querySelector('.heat-bar-fill');
       if (curEl) curEl.textContent = fmtTemp(cur);
       if (tgtEl) tgtEl.textContent = fmtTemp(tgt);
       if (fill)  fill.style.width  = this._heatPercent(room) + '%';
-      const valve = this._valvePosition(room);
-      if (valveFill && valve != null) valveFill.style.width = valve + '%';
-      if (valvePct  && valve != null) valvePct.textContent  = valve + ' %';
     }
   }
 
@@ -822,7 +822,7 @@ class SmartHeatingPanel extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           ${ICON.radiator}
           <h1>Smart Heating</h1>
-          <span style="font-size:11px;opacity:.6;font-weight:400">v0.1.6</span>
+          <span style="font-size:11px;opacity:.6;font-weight:400">v0.1.7</span>
         </div>
         <button class="btn-settings" title="Einstellungen">${ICON.settings}</button>
       </div>
@@ -863,7 +863,7 @@ class SmartHeatingPanel extends HTMLElement {
     const cur   = this._currentTemp(room);
     const tgt   = this._targetTemp(room);
     const fill  = this._heatPercent(room);
-    const valve = this._valvePosition(room);
+    const hstate = this._heatingState(room);
     const mode  = this._climateMode(room);
     const winOpen = this._isWindowOpen(room);
 
@@ -873,10 +873,16 @@ class SmartHeatingPanel extends HTMLElement {
                    : winOpen        ? '<span class="badge badge-window">' + ICON.window + ' Fenster offen</span>'
                    : '';
 
+    const heatBadge = hstate === 'heat'
+      ? `<span class="badge badge-heating">🔥 Heizend</span>`
+      : hstate === 'idle'
+      ? `<span class="badge badge-idle">✓ Bereit</span>`
+      : '';
+
     return `<div class="room-card" data-room-id="${room.id}">
       <div class="room-card-header">
         <span class="room-name">${room.name}</span>
-        <div class="room-badges">${modeHint}</div>
+        <div class="room-badges">${modeHint}${heatBadge}</div>
       </div>
       <div class="temp-row">
         <span class="temp-current">${fmtTemp(cur)}</span>
@@ -884,11 +890,6 @@ class SmartHeatingPanel extends HTMLElement {
         <span class="temp-target">${fmtTemp(tgt)}</span>
       </div>
       <div class="heat-bar"><div class="heat-bar-fill" style="width:${fill}%"></div></div>
-      ${valve != null ? `<div class="valve-row">
-        <span class="valve-label">Ventil</span>
-        <div class="valve-bar"><div class="valve-bar-fill" data-valve-fill="${room.id}" style="width:${valve}%"></div></div>
-        <span class="valve-pct" data-valve-pct="${room.id}">${valve} %</span>
-      </div>` : ''}
       <div class="schedule-hint" data-boost-id="${room.id}">${boostMins ? `🔥 Boost ${boostMins} min` : this._activeSlotHint(room.id)}</div>
     </div>`;
   }
@@ -943,14 +944,15 @@ class SmartHeatingPanel extends HTMLElement {
                 <div class="temp-hero-label">Soll-Temperatur</div>
               </div>
               ${(() => {
-                const v = this._valvePosition(room);
-                if (v == null) return '';
+                const hs = this._heatingState(room);
+                if (hs == null) return '';
+                const isHeat = hs === 'heat';
+                const color  = isHeat ? '#f44336' : '#43a047';
+                const icon   = isHeat ? '🔥' : '✓';
+                const label  = isHeat ? 'Heizend' : 'Bereit';
                 return `<div class="valve-gauge">
-                  <div class="valve-gauge-ring">
-                    ${this._valveGaugeSVG(v)}
-                    <div class="valve-gauge-pct">${v}%</div>
-                  </div>
-                  <div class="valve-gauge-label">Ventil</div>
+                  <div class="valve-gauge-ring" style="border:3px solid ${color};border-radius:50%;width:72px;height:72px;display:flex;align-items:center;justify-content:center;font-size:24px">${icon}</div>
+                  <div class="valve-gauge-label">${label}</div>
                 </div>`;
               })()}
             </div>
