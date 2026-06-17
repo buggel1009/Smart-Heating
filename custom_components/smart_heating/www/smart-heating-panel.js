@@ -24,9 +24,24 @@ function minsToTime(m) {
   return `${String(Math.floor(m / 60)).padStart(2,'0')}:${String(m % 60).padStart(2,'0')}`;
 }
 
+const SLOT_MODES = [
+  { key: 'comfort', label: 'Komfort',        icon: '🌡️' },
+  { key: 'eco',     label: 'Eco',            icon: '🌿' },
+  { key: 'sleep',   label: 'Schlaf',         icon: '🌙' },
+  { key: 'custom',  label: 'Benutzerdefiniert', icon: '✏️' },
+];
+
+function slotModeLabel(slot) {
+  if (!slot.mode || slot.mode === 'custom') {
+    return slot.temperature != null ? `✏️ ${fmtTemp(slot.temperature)}` : '✏️';
+  }
+  const m = SLOT_MODES.find(x => x.key === slot.mode);
+  return m ? `${m.icon} ${m.label}` : fmtTemp(slot.temperature);
+}
+
 function slotLabel(slot) {
   const days = (slot.days || []).map(d => DAYS_SHORT[d]).join(', ');
-  return `${days} · ${slot.start}–${slot.end} · ${fmtTemp(slot.temperature)}`;
+  return `${days} · ${slot.start}–${slot.end} · ${slotModeLabel(slot)}`;
 }
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -722,7 +737,7 @@ class SmartHeatingPanel extends HTMLElement {
   _openSlotEditor(roomId, slot = null) {
     this._editSlotRoomId = roomId;
     this._editSlot = slot ? { ...slot, days: [...(slot.days || [])] } : {
-      id: null, days: [0, 1, 2, 3, 4], start: '06:00', end: '08:00', temperature: 21,
+      id: null, days: [0, 1, 2, 3, 4], start: '06:00', end: '08:00', mode: 'comfort', temperature: 21,
     };
     this._modal = 'slot-edit';
     this._renderModal();
@@ -941,7 +956,7 @@ class SmartHeatingPanel extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           ${ICON.radiator}
           <h1>Smart Heating</h1>
-          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.1</span>
+          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.2</span>
         </div>
         <button class="btn-settings" title="Einstellungen">${ICON.settings}</button>
       </div>
@@ -1388,8 +1403,16 @@ class SmartHeatingPanel extends HTMLElement {
 
   _slotEditorHTML() {
     const s = this._editSlot;
+    const currentMode = s.mode || (s.temperature != null ? 'custom' : 'comfort');
     const dayToggles = DAYS_SHORT.map((d, i) =>
       `<button type="button" class="day-toggle ${s.days.includes(i) ? 'active' : ''}" data-day="${i}">${d}</button>`
+    ).join('');
+    const modeButtons = SLOT_MODES.map(m =>
+      `<button type="button" class="slot-mode-btn ${currentMode === m.key ? 'active' : ''}" data-mode="${m.key}"
+        style="flex:1;padding:10px 4px;border-radius:8px;border:2px solid ${currentMode === m.key ? 'var(--primary-color)' : 'var(--divider-color)'};background:${currentMode === m.key ? 'var(--primary-color)' : 'transparent'};color:${currentMode === m.key ? '#fff' : 'var(--primary-text-color)'};cursor:pointer;font-size:13px;text-align:center">
+        <div style="font-size:20px">${m.icon}</div>
+        <div>${m.label}</div>
+      </button>`
     ).join('');
 
     return `<div class="modal-sheet">
@@ -1415,8 +1438,13 @@ class SmartHeatingPanel extends HTMLElement {
       </div>
 
       <div class="form-group">
-        <label>Zieltemperatur (°C)</label>
-        <input id="slot-temp" type="number" step="0.5" min="5" max="30" value="${s.temperature}">
+        <label>Modus</label>
+        <div id="slot-modes" style="display:flex;gap:8px;margin-top:6px">${modeButtons}</div>
+      </div>
+
+      <div class="form-group" id="slot-custom-temp" style="display:${currentMode === 'custom' ? 'block' : 'none'}">
+        <label>Benutzerdefinierte Temperatur (°C)</label>
+        <input id="slot-temp" type="number" step="0.5" min="5" max="30" value="${s.temperature ?? 21}">
       </div>
 
       <div class="modal-actions">
@@ -1428,6 +1456,7 @@ class SmartHeatingPanel extends HTMLElement {
 
   _bindSlotEditorEvents(overlay) {
     const activeDays = new Set(this._editSlot.days || []);
+    let activeMode = this._editSlot.mode || (this._editSlot.temperature != null ? 'custom' : 'comfort');
 
     overlay.querySelectorAll('.day-toggle').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1437,19 +1466,37 @@ class SmartHeatingPanel extends HTMLElement {
       });
     });
 
+    const customTempEl = overlay.querySelector('#slot-custom-temp');
+    overlay.querySelectorAll('.slot-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeMode = btn.dataset.mode;
+        overlay.querySelectorAll('.slot-mode-btn').forEach(b => {
+          const isActive = b.dataset.mode === activeMode;
+          b.style.borderColor = isActive ? 'var(--primary-color)' : 'var(--divider-color)';
+          b.style.background  = isActive ? 'var(--primary-color)' : 'transparent';
+          b.style.color       = isActive ? '#fff' : 'var(--primary-text-color)';
+        });
+        customTempEl.style.display = activeMode === 'custom' ? 'block' : 'none';
+      });
+    });
+
     overlay.querySelector('.modal-close').addEventListener('click', () => this._closeModal());
     overlay.querySelector('.modal-cancel').addEventListener('click', () => this._closeModal());
     overlay.querySelector('.modal-save').addEventListener('click', () => {
       const start = overlay.querySelector('#slot-start').value;
       const end   = overlay.querySelector('#slot-end').value;
-      const temp  = parseFloat(overlay.querySelector('#slot-temp').value);
 
-      if (!activeDays.size)              { alert('Bitte mindestens einen Tag wählen.'); return; }
-      if (!start || !end)                { alert('Bitte Start- und Endzeit eingeben.'); return; }
-      if (timeToMins(start) >= timeToMins(end)) { alert('Endzeit muss nach Startzeit liegen.'); return; }
-      if (isNaN(temp))                   { alert('Bitte eine Temperatur eingeben.'); return; }
+      if (!activeDays.size)                         { alert('Bitte mindestens einen Tag wählen.'); return; }
+      if (!start || !end)                           { alert('Bitte Start- und Endzeit eingeben.'); return; }
+      if (timeToMins(start) >= timeToMins(end))     { alert('Endzeit muss nach Startzeit liegen.'); return; }
 
-      const slot = { ...this._editSlot, days: [...activeDays].sort(), start, end, temperature: temp };
+      let temperature = this._editSlot.temperature ?? 21;
+      if (activeMode === 'custom') {
+        temperature = parseFloat(overlay.querySelector('#slot-temp').value);
+        if (isNaN(temperature)) { alert('Bitte eine Temperatur eingeben.'); return; }
+      }
+
+      const slot = { ...this._editSlot, days: [...activeDays].sort(), start, end, mode: activeMode, temperature };
       this._saveSlot(this._editSlotRoomId, slot);
     });
   }

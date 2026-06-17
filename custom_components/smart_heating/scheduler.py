@@ -292,7 +292,15 @@ class SmartHeatingScheduler:
             if day not in slot.get("days", []):
                 continue
             if _time_to_mins(slot["start"]) <= mins < _time_to_mins(slot["end"]):
-                temp = float(slot["temperature"])
+                slot_mode = slot.get("mode", "custom")
+                if slot_mode == "comfort":
+                    temp = float(room.get("temp_comfort", 21.0))
+                elif slot_mode == "eco":
+                    temp = float(room.get("temp_eco", 17.0))
+                elif slot_mode == "sleep":
+                    temp = float(room.get("temp_sleep", 18.0))
+                else:  # custom or legacy slots with raw temperature
+                    temp = float(slot.get("temperature", 21.0))
                 return self._apply_outdoor_compensation(temp, outdoor_temp)
 
         # Priority 5: Fallback eco temperature
