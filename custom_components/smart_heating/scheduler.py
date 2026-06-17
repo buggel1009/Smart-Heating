@@ -89,14 +89,25 @@ class SmartHeatingScheduler:
             )
             _LOGGER.debug("Listening to %d window sensor(s)", len(window_sensors))
 
-        presence_entity = data.get("global", {}).get("presence_entity")
-        if presence_entity:
+        # Collect all presence entities: global list + legacy single + per-room lists
+        presence_entities: set[str] = set()
+        g = data.get("global", {})
+        for e in g.get("presence_entities") or []:
+            if e:
+                presence_entities.add(e)
+        if g.get("presence_entity"):  # backward compat
+            presence_entities.add(g["presence_entity"])
+        for room in data.get("rooms", {}).values():
+            for e in room.get("presence_entities") or []:
+                if e:
+                    presence_entities.add(e)
+        if presence_entities:
             self._unsub.append(
                 async_track_state_change_event(
-                    self._hass, [presence_entity], self._handle_presence_change
+                    self._hass, list(presence_entities), self._handle_presence_change
                 )
             )
-            _LOGGER.debug("Listening to presence entity: %s", presence_entity)
+            _LOGGER.debug("Listening to %d presence entity/entities", len(presence_entities))
 
     # ── Boost API ─────────────────────────────────────────────────────────────
 
@@ -258,7 +269,13 @@ class SmartHeatingScheduler:
             _LOGGER.debug("[%s] Window open → eco temp", room.get("name", room_id))
             return float(room.get("temp_eco", 17.0))
 
-        # Priority 3: Global mode override
+        # Priority 3a: Room-level presence — if defined and all away → eco
+        room_entities = [e for e in (room.get("presence_entities") or []) if e]
+        if room_entities and not self._is_anyone_home(room_entities):
+            _LOGGER.debug("[%s] Room presence: all away → eco", room.get("name", room_id))
+            return float(room.get("temp_eco", 17.0))
+
+        # Priority 3b: Global mode override
         if global_mode == "away":
             return float(data.get("global", {}).get("away_temp", room.get("temp_eco", 17.0)))
         if global_mode == "sleep":
@@ -295,16 +312,25 @@ class SmartHeatingScheduler:
         return sensor not in self._window_timers
 
     def _resolve_global_mode(self, data: dict) -> str:
-        """Return effective mode; 'auto' can fall back to 'away' via presence entity."""
+        """Return effective mode; 'auto' falls back to 'away' if all presence entities are away."""
         mode = data.get("global", {}).get("mode", "auto")
         if mode != "auto":
             return mode
-        presence_entity = data.get("global", {}).get("presence_entity")
-        if presence_entity:
-            state = self._hass.states.get(presence_entity)
-            if state and state.state == "not_home":
-                return "away"
+        g = data.get("global", {})
+        entities: list[str] = [e for e in (g.get("presence_entities") or []) if e]
+        if g.get("presence_entity"):  # backward compat
+            entities.append(g["presence_entity"])
+        if entities and not self._is_anyone_home(entities):
+            return "away"
         return "auto"
+
+    def _is_anyone_home(self, entities: list[str]) -> bool:
+        """Return True if at least one person entity state is 'home'."""
+        for entity_id in entities:
+            state = self._hass.states.get(entity_id)
+            if state and state.state == "home":
+                return True
+        return False
 
     def _find_room_by_window_sensor(self, entity_id: str) -> str | None:
         for room_id, room in self._get_data().get("rooms", {}).items():

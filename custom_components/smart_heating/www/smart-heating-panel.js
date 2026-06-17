@@ -528,7 +528,7 @@ class SmartHeatingPanel extends HTMLElement {
     this._loaded  = false;
     this._rooms   = {};
     this._schedules = {};
-    this._global  = { mode: 'auto', presence_entity: null, weather_entity: null, away_temp: 16 };
+    this._global  = { mode: 'auto', presence_entities: [], weather_entity: null, outdoor_temp_sensor: null, away_temp: 16 };
     this._view    = 'dashboard';   // 'dashboard' | 'room'
     this._roomId  = null;
     this._modal   = null;          // 'room-edit' | 'slot-edit' | null
@@ -602,15 +602,20 @@ class SmartHeatingPanel extends HTMLElement {
     const g = this._global;
     const states = this._hass.states;
 
-    const weathers  = Object.keys(states).filter(id => id.startsWith('weather.')).sort();
+    const weathers    = Object.keys(states).filter(id => id.startsWith('weather.')).sort();
     const tempSensors = Object.keys(states).filter(id =>
       id.startsWith('sensor.') && states[id].attributes.unit_of_measurement === '°C'
     ).sort();
-    const persons   = Object.keys(states).filter(id => id.startsWith('person.')).sort();
+    const persons     = Object.keys(states).filter(id => id.startsWith('person.')).sort();
 
     const option = (list, selected, placeholder) =>
       `<option value="">${placeholder}</option>` +
       list.map(id => `<option value="${id}" ${id === selected ? 'selected' : ''}>${id}</option>`).join('');
+
+    const selectedPersons = new Set(g.presence_entities || []);
+    const personToggles = persons.length
+      ? persons.map(id => `<button type="button" class="person-toggle ${selectedPersons.has(id) ? 'active' : ''}" data-id="${id}" style="margin:2px 4px 2px 0;padding:4px 10px;border-radius:16px;border:1px solid var(--divider-color);background:${selectedPersons.has(id) ? 'var(--primary-color)' : 'transparent'};color:${selectedPersons.has(id) ? '#fff' : 'var(--primary-text-color)'};cursor:pointer;font-size:13px">${id.replace('person.','')}</button>`).join('')
+      : '<span style="color:var(--secondary-text-color);font-size:13px">Keine person.* Entities gefunden</span>';
 
     const awayTemp = g.away_temp ?? 16;
 
@@ -635,17 +640,17 @@ class SmartHeatingPanel extends HTMLElement {
       </div>
 
       <p style="font-size:12px;color:var(--secondary-text-color);margin:0 0 12px">
-        💡 Bei ≥18 °C Außentemperatur wird das Ziel um 2 °C gesenkt. Bei &lt;0 °C um 0,5 °C erhöht.
-        Wenn beide gesetzt sind, hat die Wetter-Entity Vorrang.
+        💡 Bei ≥18 °C draußen: Ziel −2 °C (min. 15 °C) · Bei &lt;0 °C: Ziel +0,5 °C · Wetter hat Vorrang vor Sensor.
       </p>
 
       <div class="divider"></div>
 
       <div class="form-group">
-        <label>Anwesenheitserkennung — Person-Entity (person.*)</label>
-        <select id="set-presence">
-          ${option(persons, g.presence_entity, '— Keine —')}
-        </select>
+        <label>Anwesenheitserkennung — Personen (mehrere möglich)</label>
+        <div id="set-persons" style="display:flex;flex-wrap:wrap;gap:2px;margin-top:6px">${personToggles}</div>
+        <p style="font-size:12px;color:var(--secondary-text-color);margin:6px 0 0">
+          Global Abwesend wird aktiv wenn <strong>alle</strong> ausgewählten Personen nicht zuhause sind.
+        </p>
       </div>
 
       <div class="form-group">
@@ -663,19 +668,37 @@ class SmartHeatingPanel extends HTMLElement {
   _bindSettingsEvents(overlay) {
     overlay.querySelector('.modal-close').addEventListener('click', () => this._closeModal());
     overlay.querySelector('.modal-cancel').addEventListener('click', () => this._closeModal());
+
+    const activePersons = new Set(this._global.presence_entities || []);
+    overlay.querySelectorAll('.person-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        if (activePersons.has(id)) {
+          activePersons.delete(id);
+          btn.classList.remove('active');
+          btn.style.background = 'transparent';
+          btn.style.color = 'var(--primary-text-color)';
+        } else {
+          activePersons.add(id);
+          btn.classList.add('active');
+          btn.style.background = 'var(--primary-color)';
+          btn.style.color = '#fff';
+        }
+      });
+    });
+
     overlay.querySelector('.modal-save').addEventListener('click', async () => {
-      const weather        = overlay.querySelector('#set-weather').value        || null;
-      const outdoorSensor  = overlay.querySelector('#set-outdoor-sensor').value || null;
-      const presence       = overlay.querySelector('#set-presence').value       || null;
-      const awayTemp       = parseFloat(overlay.querySelector('#set-away-temp').value);
+      const weather       = overlay.querySelector('#set-weather').value       || null;
+      const outdoorSensor = overlay.querySelector('#set-outdoor-sensor').value || null;
+      const awayTemp      = parseFloat(overlay.querySelector('#set-away-temp').value);
 
       try {
         const res = await this._ws(DOMAIN + '/set_global_mode', {
-          mode:                 this._global.mode,
-          weather_entity:       weather,
-          outdoor_temp_sensor:  outdoorSensor,
-          presence_entity:      presence,
-          away_temp:            isNaN(awayTemp) ? 16 : awayTemp,
+          mode:                this._global.mode,
+          weather_entity:      weather,
+          outdoor_temp_sensor: outdoorSensor,
+          presence_entities:   [...activePersons],
+          away_temp:           isNaN(awayTemp) ? 16 : awayTemp,
         });
         this._global = res.global;
         this._closeModal();
@@ -687,7 +710,8 @@ class SmartHeatingPanel extends HTMLElement {
   _openRoomEditor(room = null) {
     this._editRoom = room ? { ...room } : {
       id: null, name: '', climate_entity: '', temp_sensor: '',
-      window_sensor: '', valve_entity: '', temp_comfort: 21, temp_eco: 17,
+      window_sensor: '', valve_entity: '', presence_entities: [],
+      temp_comfort: 21, temp_eco: 17,
       temp_sleep: 18, temp_boost: 24, boost_duration: 60,
       window_open_delay: 5, enabled: true,
     };
@@ -917,7 +941,7 @@ class SmartHeatingPanel extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           ${ICON.radiator}
           <h1>Smart Heating</h1>
-          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.0</span>
+          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.1</span>
         </div>
         <button class="btn-settings" title="Einstellungen">${ICON.settings}</button>
       </div>
@@ -1230,14 +1254,19 @@ class SmartHeatingPanel extends HTMLElement {
     const r = this._editRoom;
     const isNew = !r.id;
 
-    // Get climate entities from hass
     const climates  = Object.keys(this._hass.states).filter(id => id.startsWith('climate.')).sort();
     const sensors   = Object.keys(this._hass.states).filter(id => id.startsWith('sensor.') && this._hass.states[id].attributes.unit_of_measurement === '°C').sort();
     const binaries  = Object.keys(this._hass.states).filter(id => id.startsWith('binary_sensor.')).sort();
+    const persons   = Object.keys(this._hass.states).filter(id => id.startsWith('person.')).sort();
 
     const option = (list, selected, placeholder) =>
       `<option value="">${placeholder}</option>` +
       list.map(id => `<option value="${id}" ${id === selected ? 'selected' : ''}>${id}</option>`).join('');
+
+    const selectedRoomPersons = new Set(r.presence_entities || []);
+    const roomPersonToggles = persons.length
+      ? persons.map(id => `<button type="button" class="room-person-toggle ${selectedRoomPersons.has(id) ? 'active' : ''}" data-id="${id}" style="margin:2px 4px 2px 0;padding:4px 10px;border-radius:16px;border:1px solid var(--divider-color);background:${selectedRoomPersons.has(id) ? 'var(--primary-color)' : 'transparent'};color:${selectedRoomPersons.has(id) ? '#fff' : 'var(--primary-text-color)'};cursor:pointer;font-size:13px">${id.replace('person.','')}</button>`).join('')
+      : '<span style="color:var(--secondary-text-color);font-size:13px">Keine person.* Entities</span>';
 
     return `<div class="modal-sheet">
       <div class="modal-title">
@@ -1282,6 +1311,14 @@ class SmartHeatingPanel extends HTMLElement {
         </select>
       </div>
 
+      <div class="form-group">
+        <label>Anwesenheit — Personen für diesen Raum (optional, mehrere möglich)</label>
+        <div id="room-persons" style="display:flex;flex-wrap:wrap;gap:2px;margin-top:6px">${roomPersonToggles}</div>
+        <p style="font-size:12px;color:var(--secondary-text-color);margin:6px 0 0">
+          Alle weg → Eco-Temperatur für diesen Raum, unabhängig vom globalen Modus.
+        </p>
+      </div>
+
       <div class="divider"></div>
       <div class="form-row">
         <div class="form-group">
@@ -1308,6 +1345,23 @@ class SmartHeatingPanel extends HTMLElement {
   _bindRoomEditorEvents(overlay) {
     overlay.querySelector('.modal-close').addEventListener('click', () => this._closeModal());
     overlay.querySelector('.modal-cancel').addEventListener('click', () => this._closeModal());
+
+    const activeRoomPersons = new Set(this._editRoom.presence_entities || []);
+    overlay.querySelectorAll('.room-person-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        if (activeRoomPersons.has(id)) {
+          activeRoomPersons.delete(id);
+          btn.style.background = 'transparent';
+          btn.style.color = 'var(--primary-text-color)';
+        } else {
+          activeRoomPersons.add(id);
+          btn.style.background = 'var(--primary-color)';
+          btn.style.color = '#fff';
+        }
+      });
+    });
+
     overlay.querySelector('.modal-save').addEventListener('click', () => {
       const name = overlay.querySelector('#room-name').value.trim();
       if (!name) { alert('Bitte einen Raumnamen eingeben.'); return; }
@@ -1317,13 +1371,14 @@ class SmartHeatingPanel extends HTMLElement {
       const room = {
         ...this._editRoom,
         name,
-        climate_entity: climate,
-        temp_sensor:    overlay.querySelector('#room-sensor').value  || null,
-        window_sensor:  overlay.querySelector('#room-window').value  || null,
-        valve_entity:   overlay.querySelector('#room-valve').value   || null,
-        temp_comfort:   parseFloat(overlay.querySelector('#temp-comfort').value) || 21,
-        temp_eco:       parseFloat(overlay.querySelector('#temp-eco').value)     || 17,
-        temp_sleep:     parseFloat(overlay.querySelector('#temp-sleep').value)   || 18,
+        climate_entity:    climate,
+        temp_sensor:       overlay.querySelector('#room-sensor').value || null,
+        window_sensor:     overlay.querySelector('#room-window').value || null,
+        valve_entity:      overlay.querySelector('#room-valve').value  || null,
+        presence_entities: [...activeRoomPersons],
+        temp_comfort:      parseFloat(overlay.querySelector('#temp-comfort').value) || 21,
+        temp_eco:          parseFloat(overlay.querySelector('#temp-eco').value)     || 17,
+        temp_sleep:        parseFloat(overlay.querySelector('#temp-sleep').value)   || 18,
       };
       this._saveRoom(room);
     });

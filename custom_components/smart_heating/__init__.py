@@ -38,7 +38,7 @@ _DEFAULT_DATA: dict[str, Any] = {
     "schedules": {},
     "global": {
         "mode": "auto",
-        "presence_entity": None,
+        "presence_entities": [],
         "weather_entity": None,
         "outdoor_temp_sensor": None,
         "away_temp": 16.0,
@@ -86,7 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "smart-heating-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.2.0",
+                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.2.1",
             }
         },
         require_admin=False,
@@ -231,7 +231,7 @@ def _register_ws_api(hass: HomeAssistant) -> None:
     @websocket_api.websocket_command({
         vol.Required("type"): f"{DOMAIN}/set_global_mode",
         vol.Required("mode"): str,
-        vol.Optional("presence_entity"): vol.Any(str, None),
+        vol.Optional("presence_entities"): list,
         vol.Optional("weather_entity"): vol.Any(str, None),
         vol.Optional("outdoor_temp_sensor"): vol.Any(str, None),
         vol.Optional("away_temp"): vol.Coerce(float),
@@ -240,8 +240,8 @@ def _register_ws_api(hass: HomeAssistant) -> None:
     async def ws_set_global_mode(hass, connection, msg):
         g = _data(hass).setdefault("global", {})
         g["mode"] = msg["mode"]
-        if "presence_entity" in msg:
-            g["presence_entity"] = msg["presence_entity"]
+        if "presence_entities" in msg:
+            g["presence_entities"] = [e for e in msg["presence_entities"] if e]
         if "weather_entity" in msg:
             g["weather_entity"] = msg["weather_entity"]
         if "outdoor_temp_sensor" in msg:
