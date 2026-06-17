@@ -594,7 +594,7 @@ class SmartHeatingPanel extends HTMLElement {
   _openRoomEditor(room = null) {
     this._editRoom = room ? { ...room } : {
       id: null, name: '', climate_entity: '', temp_sensor: '',
-      window_sensor: '', temp_comfort: 21, temp_eco: 17,
+      window_sensor: '', valve_entity: '', temp_comfort: 21, temp_eco: 17,
       temp_sleep: 18, temp_boost: 24, boost_duration: 60,
       window_open_delay: 5, enabled: true,
     };
@@ -749,10 +749,15 @@ class SmartHeatingPanel extends HTMLElement {
   }
 
   _valvePosition(room) {
+    // Priority 1: dedicated valve entity (number.* from Z2M)
+    if (room.valve_entity) {
+      const s = this._hass.states[room.valve_entity];
+      if (s && s.state !== 'unavailable') return Math.round(Number(s.state));
+    }
+    // Priority 2: attribute on the climate entity (some Z2M versions)
     const climate = room.climate_entity && this._hass.states[room.climate_entity];
     if (!climate) return null;
     const a = climate.attributes;
-    // SONOFF TRVZB via Z2M: valve_opening_degree is the primary attribute name
     const pos = a.valve_opening_degree ?? a.position ?? a.valve_position ?? a.pi_heating_demand ?? null;
     if (pos == null) return null;
     return Math.round(Number(pos));
@@ -976,6 +981,11 @@ class SmartHeatingPanel extends HTMLElement {
               <span class="entity-value">${room.window_sensor}</span>
               <span class="entity-state">${windowState ? (windowState.state === 'on' ? '🪟 Offen' : '✓ Zu') : '—'}</span>
             </div>` : ''}
+            ${room.valve_entity ? `<div class="entity-row">
+              <span class="entity-label">Ventilsensor</span>
+              <span class="entity-value">${room.valve_entity}</span>
+              <span class="entity-state">${(() => { const s = this._hass.states[room.valve_entity]; return s ? Math.round(Number(s.state)) + ' %' : '—'; })()}</span>
+            </div>` : ''}
           </div>
         </div>
 
@@ -1165,6 +1175,17 @@ class SmartHeatingPanel extends HTMLElement {
         </select>
       </div>
 
+      <div class="form-group">
+        <label>Ventilsensor (optional) — z.B. number.*_valve_opening_degree</label>
+        <select id="room-valve">
+          ${option(
+            Object.keys(this._hass.states).filter(id => id.startsWith('number.')).sort(),
+            r.valve_entity,
+            '— Ventilsensor wählen (optional) —'
+          )}
+        </select>
+      </div>
+
       <div class="divider"></div>
       <div class="form-row">
         <div class="form-group">
@@ -1203,6 +1224,7 @@ class SmartHeatingPanel extends HTMLElement {
         climate_entity: climate,
         temp_sensor:    overlay.querySelector('#room-sensor').value  || null,
         window_sensor:  overlay.querySelector('#room-window').value  || null,
+        valve_entity:   overlay.querySelector('#room-valve').value   || null,
         temp_comfort:   parseFloat(overlay.querySelector('#temp-comfort').value) || 21,
         temp_eco:       parseFloat(overlay.querySelector('#temp-eco').value)     || 17,
         temp_sleep:     parseFloat(overlay.querySelector('#temp-sleep').value)   || 18,
