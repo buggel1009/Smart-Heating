@@ -749,14 +749,20 @@ class SmartHeatingPanel extends HTMLElement {
   }
 
   _valvePosition(room) {
-    // Priority 1: pi_heating_demand from climate entity (real-time valve demand, SONOFF TRVZB)
     const climate = room.climate_entity && this._hass.states[room.climate_entity];
     if (climate) {
       const a = climate.attributes;
+      // running_state is the most reliable indicator for SONOFF TRVZB
+      if (a.running_state === 'idle') return 0;
+      if (a.running_state === 'heat') {
+        const demand = a.pi_heating_demand ?? a.position ?? a.valve_position ?? null;
+        return demand != null ? Math.round(Number(demand)) : 100;
+      }
+      // No running_state: fall back to pi_heating_demand
       const demand = a.pi_heating_demand ?? a.position ?? a.valve_position ?? null;
       if (demand != null) return Math.round(Number(demand));
     }
-    // Priority 2: dedicated number.* entity (fallback for devices with real readback)
+    // Fallback: dedicated number.* entity (for devices with real readback)
     if (room.valve_entity) {
       const s = this._hass.states[room.valve_entity];
       if (s && s.state !== 'unavailable') return Math.round(Number(s.state));
@@ -829,7 +835,7 @@ class SmartHeatingPanel extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           ${ICON.radiator}
           <h1>Smart Heating</h1>
-          <span style="font-size:11px;opacity:.6;font-weight:400">v0.1.4</span>
+          <span style="font-size:11px;opacity:.6;font-weight:400">v0.1.5</span>
         </div>
         <button class="btn-settings" title="Einstellungen">${ICON.settings}</button>
       </div>
