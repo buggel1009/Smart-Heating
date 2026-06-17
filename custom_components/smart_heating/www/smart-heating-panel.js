@@ -5,11 +5,8 @@
 
 const DOMAIN = 'smart_heating';
 const DAYS_SHORT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-const DAYS_FULL  = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
-
-function uid() { return Math.random().toString(36).slice(2, 9); }
 
 function fmtTemp(t) {
   return t != null ? `${Number(t).toFixed(1)} °C` : '—';
@@ -18,10 +15,6 @@ function fmtTemp(t) {
 function timeToMins(t) {
   const [h, m] = (t || '00:00').split(':').map(Number);
   return h * 60 + m;
-}
-
-function minsToTime(m) {
-  return `${String(Math.floor(m / 60)).padStart(2,'0')}:${String(m % 60).padStart(2,'0')}`;
 }
 
 const SLOT_MODES = [
@@ -896,20 +889,6 @@ class SmartHeatingPanel extends HTMLElement {
     return null;
   }
 
-  _valveGaugeSVG(pct, size = 72) {
-    const r = (size / 2) - 6;
-    const circ = 2 * Math.PI * r;
-    const filled = (pct / 100) * circ;
-    const color = pct > 60 ? '#f44336' : pct > 20 ? '#ff9800' : '#0288d1';
-    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none"
-        stroke="var(--divider-color,#eee)" stroke-width="5"/>
-      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none"
-        stroke="${color}" stroke-width="5"
-        stroke-dasharray="${filled} ${circ - filled}"
-        stroke-linecap="round"/>
-    </svg>`;
-  }
 
   // ── Live temp update (called on every hass update) ────────────────────────
 
@@ -956,7 +935,7 @@ class SmartHeatingPanel extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           ${ICON.radiator}
           <h1>Smart Heating</h1>
-          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.4</span>
+          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.5</span>
         </div>
         <button class="btn-settings" title="Einstellungen">${ICON.settings}</button>
       </div>

@@ -86,7 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "smart-heating-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.2.4",
+                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.2.5",
             }
         },
         require_admin=False,
@@ -290,24 +290,6 @@ def _register_ws_api(hass: HomeAssistant) -> None:
     async def ws_get_boost_states(hass, connection, msg):
         connection.send_result(msg["id"], _scheduler(hass).get_boost_states())
 
-    # ── get_states ─────────────────────────────────────────────────────────
-
-    @websocket_api.websocket_command({
-        vol.Required("type"): f"{DOMAIN}/get_states",
-        vol.Required("entity_ids"): list,
-    })
-    @websocket_api.async_response
-    async def ws_get_states(hass, connection, msg):
-        states = {}
-        for eid in msg["entity_ids"]:
-            state = hass.states.get(eid)
-            if state:
-                states[eid] = {
-                    "state": state.state,
-                    "attributes": dict(state.attributes),
-                }
-        connection.send_result(msg["id"], states)
-
     # ── Register all ──────────────────────────────────────────────────────
 
     for handler in (
@@ -320,6 +302,5 @@ def _register_ws_api(hass: HomeAssistant) -> None:
         ws_set_boost,
         ws_cancel_boost,
         ws_get_boost_states,
-        ws_get_states,
     ):
         async_register_command(hass, handler)

@@ -265,7 +265,7 @@ class SmartHeatingScheduler:
             self._boost.pop(room_id, None)  # expired
 
         # Priority 2: Window open (after delay)
-        if self._is_window_currently_heating_paused(room_id, room):
+        if self._is_window_currently_heating_paused(room):
             _LOGGER.debug("[%s] Window open → eco temp", room.get("name", room_id))
             return float(room.get("temp_eco", 17.0))
 
@@ -308,7 +308,7 @@ class SmartHeatingScheduler:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _is_window_currently_heating_paused(self, room_id: str, room: dict) -> bool:
+    def _is_window_currently_heating_paused(self, room: dict) -> bool:
         """Return True if window is open AND the delay has already expired (timer fired)."""
         sensor = room.get("window_sensor")
         if not sensor:
