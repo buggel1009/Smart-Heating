@@ -749,18 +749,19 @@ class SmartHeatingPanel extends HTMLElement {
   }
 
   _valvePosition(room) {
-    // Priority 1: dedicated valve entity (number.* from Z2M)
+    // Priority 1: pi_heating_demand from climate entity (real-time valve demand, SONOFF TRVZB)
+    const climate = room.climate_entity && this._hass.states[room.climate_entity];
+    if (climate) {
+      const a = climate.attributes;
+      const demand = a.pi_heating_demand ?? a.position ?? a.valve_position ?? null;
+      if (demand != null) return Math.round(Number(demand));
+    }
+    // Priority 2: dedicated number.* entity (fallback for devices with real readback)
     if (room.valve_entity) {
       const s = this._hass.states[room.valve_entity];
       if (s && s.state !== 'unavailable') return Math.round(Number(s.state));
     }
-    // Priority 2: attribute on the climate entity (some Z2M versions)
-    const climate = room.climate_entity && this._hass.states[room.climate_entity];
-    if (!climate) return null;
-    const a = climate.attributes;
-    const pos = a.valve_opening_degree ?? a.position ?? a.valve_position ?? a.pi_heating_demand ?? null;
-    if (pos == null) return null;
-    return Math.round(Number(pos));
+    return null;
   }
 
   _valveGaugeSVG(pct, size = 72) {
@@ -828,7 +829,7 @@ class SmartHeatingPanel extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           ${ICON.radiator}
           <h1>Smart Heating</h1>
-          <span style="font-size:11px;opacity:.6;font-weight:400">v0.1.2</span>
+          <span style="font-size:11px;opacity:.6;font-weight:400">v0.1.4</span>
         </div>
         <button class="btn-settings" title="Einstellungen">${ICON.settings}</button>
       </div>
