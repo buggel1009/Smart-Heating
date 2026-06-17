@@ -164,7 +164,7 @@ const CSS = `
     border-radius: 2px;
     background: var(--divider-color, #eee);
     overflow: hidden;
-    margin-bottom: 10px;
+    margin-bottom: 6px;
   }
   .heat-bar-fill {
     height: 100%;
@@ -172,6 +172,53 @@ const CSS = `
     background: linear-gradient(to right, #ff9800, #f44336);
     transition: width .3s;
   }
+
+  /* valve bar */
+  .valve-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .valve-label { font-size: 11px; color: var(--secondary-text-color); min-width: 42px; }
+  .valve-bar {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--divider-color, #eee);
+    overflow: hidden;
+  }
+  .valve-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(to right, #4fc3f7, #0288d1);
+    transition: width .4s;
+  }
+  .valve-pct { font-size: 11px; color: var(--secondary-text-color); min-width: 28px; text-align: right; }
+
+  /* valve gauge in detail view */
+  .valve-gauge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 0 12px;
+  }
+  .valve-gauge-ring {
+    position: relative;
+    width: 72px; height: 72px;
+  }
+  .valve-gauge-ring svg { transform: rotate(-90deg); }
+  .valve-gauge-pct {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 300;
+  }
+  .valve-gauge-label { font-size: 12px; color: var(--secondary-text-color); }
 
   .schedule-hint {
     font-size: 12px;
@@ -701,6 +748,31 @@ class SmartHeatingPanel extends HTMLElement {
     return Math.max(0, Math.min(100, diff / 3 * 100));
   }
 
+  _valvePosition(room) {
+    const climate = room.climate_entity && this._hass.states[room.climate_entity];
+    if (!climate) return null;
+    const a = climate.attributes;
+    // Z2M exposes valve position under different attribute names depending on firmware
+    const pos = a.position ?? a.valve_position ?? a.pi_heating_demand ?? null;
+    if (pos == null) return null;
+    return Math.round(Number(pos));
+  }
+
+  _valveGaugeSVG(pct, size = 72) {
+    const r = (size / 2) - 6;
+    const circ = 2 * Math.PI * r;
+    const filled = (pct / 100) * circ;
+    const color = pct > 60 ? '#f44336' : pct > 20 ? '#ff9800' : '#0288d1';
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none"
+        stroke="var(--divider-color,#eee)" stroke-width="5"/>
+      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none"
+        stroke="${color}" stroke-width="5"
+        stroke-dasharray="${filled} ${circ - filled}"
+        stroke-linecap="round"/>
+    </svg>`;
+  }
+
   // ── Live temp update (called on every hass update) ────────────────────────
 
   _updateLiveTemps() {
@@ -710,12 +782,17 @@ class SmartHeatingPanel extends HTMLElement {
       if (!card) continue;
       const cur = this._currentTemp(room);
       const tgt = this._targetTemp(room);
-      const curEl = card.querySelector('.temp-current');
-      const tgtEl = card.querySelector('.temp-target');
-      const fill  = card.querySelector('.heat-bar-fill');
+      const curEl     = card.querySelector('.temp-current');
+      const tgtEl     = card.querySelector('.temp-target');
+      const fill      = card.querySelector('.heat-bar-fill');
+      const valveFill = card.querySelector(`[data-valve-fill="${room.id}"]`);
+      const valvePct  = card.querySelector(`[data-valve-pct="${room.id}"]`);
       if (curEl) curEl.textContent = fmtTemp(cur);
       if (tgtEl) tgtEl.textContent = fmtTemp(tgt);
       if (fill)  fill.style.width  = this._heatPercent(room) + '%';
+      const valve = this._valvePosition(room);
+      if (valveFill && valve != null) valveFill.style.width = valve + '%';
+      if (valvePct  && valve != null) valvePct.textContent  = valve + ' %';
     }
   }
 
@@ -783,10 +860,11 @@ class SmartHeatingPanel extends HTMLElement {
   }
 
   _roomCardHTML(room) {
-    const cur  = this._currentTemp(room);
-    const tgt  = this._targetTemp(room);
-    const fill = this._heatPercent(room);
-    const mode = this._climateMode(room);
+    const cur   = this._currentTemp(room);
+    const tgt   = this._targetTemp(room);
+    const fill  = this._heatPercent(room);
+    const valve = this._valvePosition(room);
+    const mode  = this._climateMode(room);
     const winOpen = this._isWindowOpen(room);
 
     const boostMins = this._boostRemainingMins(room.id);
@@ -806,6 +884,11 @@ class SmartHeatingPanel extends HTMLElement {
         <span class="temp-target">${fmtTemp(tgt)}</span>
       </div>
       <div class="heat-bar"><div class="heat-bar-fill" style="width:${fill}%"></div></div>
+      ${valve != null ? `<div class="valve-row">
+        <span class="valve-label">Ventil</span>
+        <div class="valve-bar"><div class="valve-bar-fill" data-valve-fill="${room.id}" style="width:${valve}%"></div></div>
+        <span class="valve-pct" data-valve-pct="${room.id}">${valve} %</span>
+      </div>` : ''}
       <div class="schedule-hint" data-boost-id="${room.id}">${boostMins ? `🔥 Boost ${boostMins} min` : this._activeSlotHint(room.id)}</div>
     </div>`;
   }
@@ -859,6 +942,17 @@ class SmartHeatingPanel extends HTMLElement {
                 <div class="temp-hero-value" style="color:var(--primary-color)">${fmtTemp(tgt)}</div>
                 <div class="temp-hero-label">Soll-Temperatur</div>
               </div>
+              ${(() => {
+                const v = this._valvePosition(room);
+                if (v == null) return '';
+                return `<div class="valve-gauge">
+                  <div class="valve-gauge-ring">
+                    ${this._valveGaugeSVG(v)}
+                    <div class="valve-gauge-pct">${v}%</div>
+                  </div>
+                  <div class="valve-gauge-label">Ventil</div>
+                </div>`;
+              })()}
             </div>
           </div>
         </div>
