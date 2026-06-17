@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update version in manifest.json
+        run: |
+          sed -i 's/"version": "[^"]*"/"version": "${{ steps.version.outputs.VERSION }}"/' \
+            custom_components/smart_heating/manifest.json
+
+      - name: Create release ZIP
+        run: |
+          zip -r smart_heating.zip custom_components/smart_heating/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Smart Heating ${{ github.ref_name }}
+          body: |
+            ## Smart Heating ${{ github.ref_name }}
+
+            ### Installation
+            **HACS:** Integration wird automatisch aktualisiert.
+
+            **Manuell:** `smart_heating.zip` herunterladen und in `/config/custom_components/` entpacken.
+          files: smart_heating.zip
+          draft: false
+          prerelease: false
