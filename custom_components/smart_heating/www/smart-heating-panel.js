@@ -110,6 +110,10 @@ const CSS = `
     color: #fff;
     border-color: var(--primary-color);
   }
+  .mode-btn.active.summer-btn {
+    background: #0288d1;
+    border-color: #0288d1;
+  }
 
   /* ── Scrollable content ── */
   .sh-content {
@@ -512,6 +516,41 @@ const CSS = `
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ── Overview ── */
+  .overview-section { padding: 16px 16px 0; }
+  .overview-section h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .5px; }
+  .status-cards { display: flex; gap: 10px; margin-bottom: 16px; }
+  .status-card {
+    flex: 1; background: var(--card-background-color, #fff);
+    border-radius: 10px; padding: 12px 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  .status-card-label { font-size: 11px; color: var(--secondary-text-color); margin-bottom: 4px; }
+  .status-card-value { font-size: 20px; font-weight: 600; }
+  .overview-mode-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .overview-mode-btn {
+    flex: 1; min-width: 100px; padding: 10px 6px;
+    border: 2px solid var(--divider-color, #e0e0e0);
+    border-radius: 12px; background: none; cursor: pointer;
+    font-size: 13px; font-weight: 500; color: var(--secondary-text-color);
+    transition: all .15s; text-align: center;
+  }
+  .overview-mode-btn:hover { border-color: var(--primary-color); color: var(--primary-text-color); }
+  .overview-mode-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+  .overview-mode-btn.active.summer-mode { background: #0288d1; border-color: #0288d1; }
+  .overview-mode-btn .mode-icon { font-size: 22px; display: block; margin-bottom: 4px; }
+  .room-list-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; background: var(--card-background-color, #fff);
+    border-radius: 10px; margin-bottom: 8px; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    transition: box-shadow .15s;
+  }
+  .room-list-row:hover { box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  .room-list-name { flex: 1; font-weight: 500; font-size: 14px; }
+  .room-list-temps { font-size: 13px; color: var(--secondary-text-color); }
+  .room-list-badge { font-size: 12px; }
+
   /* ── Log view ── */
   .log-toolbar {
     display: flex; align-items: center; gap: 8px;
@@ -567,6 +606,7 @@ const ICON = {
   window:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-1 17H5V5h14v14zm-6-2v-5h-2v5H7v-2h2v-1H7v-2h2V9h2v1h2V9h2v2h-2v1h2v2h-2v1h2v2h-6z"/></svg>`,
   boost:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 .67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"/></svg>`,
   logs:     `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-7 14H7v-2h5v2zm5-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>`,
+  overview: `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>`,
 };
 
 // ── Main Panel Element ─────────────────────────────────────────────────────────
@@ -579,8 +619,8 @@ class SmartHeatingPanel extends HTMLElement {
     this._loaded  = false;
     this._rooms   = {};
     this._schedules = {};
-    this._global  = { mode: 'auto', presence_entities: [], weather_entity: null, outdoor_temp_sensor: null, away_temp: 16 };
-    this._view    = 'dashboard';   // 'dashboard' | 'room' | 'logs'
+    this._global  = { mode: 'auto', presence_entities: [], weather_entity: null, outdoor_temp_sensor: null, away_temp: 16, frost_protection_temp: 7 };
+    this._view    = 'dashboard';   // 'dashboard' | 'room' | 'overview' | 'logs'
     this._roomId  = null;
     this._modal   = null;          // 'room-edit' | 'slot-edit' | null
     this._logsRefreshId = null;
@@ -647,6 +687,12 @@ class SmartHeatingPanel extends HTMLElement {
     this._render();
   }
 
+  _goOverview() {
+    this._clearLogsRefresh();
+    this._view = 'overview';
+    this._render();
+  }
+
   _goLogs() {
     this._view = 'logs';
     this._render();
@@ -683,7 +729,8 @@ class SmartHeatingPanel extends HTMLElement {
       ? persons.map(id => `<button type="button" class="person-toggle ${selectedPersons.has(id) ? 'active' : ''}" data-id="${id}" style="margin:2px 4px 2px 0;padding:4px 10px;border-radius:16px;border:1px solid var(--divider-color);background:${selectedPersons.has(id) ? 'var(--primary-color)' : 'transparent'};color:${selectedPersons.has(id) ? '#fff' : 'var(--primary-text-color)'};cursor:pointer;font-size:13px">${id.replace('person.','')}</button>`).join('')
       : '<span style="color:var(--secondary-text-color);font-size:13px">Keine person.* Entities gefunden</span>';
 
-    const awayTemp = g.away_temp ?? 16;
+    const awayTemp   = g.away_temp ?? 16;
+    const frostTemp  = g.frost_protection_temp ?? 7;
 
     return `<div class="modal-sheet">
       <div class="modal-title">
@@ -724,6 +771,12 @@ class SmartHeatingPanel extends HTMLElement {
         <input id="set-away-temp" type="number" step="0.5" min="5" max="25" value="${awayTemp}">
       </div>
 
+      <div class="form-group">
+        <label>Frostschutz-Temperatur — Sommer-Modus (°C)</label>
+        <input id="set-frost-temp" type="number" step="0.5" min="4" max="12" value="${frostTemp}">
+        <p style="font-size:12px;color:var(--secondary-text-color);margin:4px 0 0">Im ☀️ Sommer-Modus wird diese Temperatur in allen Räumen gehalten.</p>
+      </div>
+
       <div class="modal-actions">
         <button class="btn btn-secondary modal-cancel">Abbrechen</button>
         <button class="btn btn-primary modal-save">Speichern</button>
@@ -757,14 +810,16 @@ class SmartHeatingPanel extends HTMLElement {
       const weather       = overlay.querySelector('#set-weather').value       || null;
       const outdoorSensor = overlay.querySelector('#set-outdoor-sensor').value || null;
       const awayTemp      = parseFloat(overlay.querySelector('#set-away-temp').value);
+      const frostTemp     = parseFloat(overlay.querySelector('#set-frost-temp').value);
 
       try {
         const res = await this._ws(DOMAIN + '/set_global_mode', {
-          mode:                this._global.mode,
-          weather_entity:      weather,
-          outdoor_temp_sensor: outdoorSensor,
-          presence_entities:   [...activePersons],
-          away_temp:           isNaN(awayTemp) ? 16 : awayTemp,
+          mode:                    this._global.mode,
+          weather_entity:          weather,
+          outdoor_temp_sensor:     outdoorSensor,
+          presence_entities:       [...activePersons],
+          away_temp:               isNaN(awayTemp) ? 16 : awayTemp,
+          frost_protection_temp:   isNaN(frostTemp) ? 7 : frostTemp,
         });
         this._global = res.global;
         this._closeModal();
@@ -837,13 +892,14 @@ class SmartHeatingPanel extends HTMLElement {
     this._render();
   }
 
-  async _setGlobalMode(mode) {
+  async _setGlobalMode(mode, stayInView = false) {
     try {
       const res = await this._ws(DOMAIN + '/set_global_mode', { mode });
       this._global = res.global;
     } catch(e) {
       this._global.mode = mode; // optimistic fallback
     }
+    if (!stayInView) this._view = 'dashboard';
     this._render();
   }
 
@@ -980,6 +1036,7 @@ class SmartHeatingPanel extends HTMLElement {
 
     if (this._view === 'dashboard') this._renderDashboard(root);
     else if (this._view === 'room') this._renderRoomDetail(root);
+    else if (this._view === 'overview') this._renderOverview(root);
     else if (this._view === 'logs') this._renderLogs(root);
   }
 
@@ -994,16 +1051,18 @@ class SmartHeatingPanel extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           ${ICON.radiator}
           <h1>Smart Heating</h1>
-          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.6</span>
+          <span style="font-size:11px;opacity:.6;font-weight:400">v0.2.7</span>
         </div>
+        <button class="btn-overview" title="Übersicht">${ICON.overview}</button>
         <button class="btn-logs" title="Entwickler-Logs">${ICON.logs}</button>
         <button class="btn-settings" title="Einstellungen">${ICON.settings}</button>
       </div>
 
       <div class="mode-bar">
-        <button class="mode-btn ${this._global.mode === 'auto'    ? 'active' : ''}" data-mode="auto">🏠 Zuhause</button>
-        <button class="mode-btn ${this._global.mode === 'away'    ? 'active' : ''}" data-mode="away">🏃 Abwesend</button>
-        <button class="mode-btn ${this._global.mode === 'sleep'   ? 'active' : ''}" data-mode="sleep">🌙 Nacht</button>
+        <button class="mode-btn ${this._global.mode === 'auto'   ? 'active' : ''}" data-mode="auto">🏠 Zuhause</button>
+        <button class="mode-btn ${this._global.mode === 'away'   ? 'active' : ''}" data-mode="away">🏃 Abwesend</button>
+        <button class="mode-btn ${this._global.mode === 'sleep'  ? 'active' : ''}" data-mode="sleep">🌙 Nacht</button>
+        <button class="mode-btn summer-btn ${this._global.mode === 'summer' ? 'active' : ''}" data-mode="summer">☀️ Sommer</button>
       </div>
 
       <div class="sh-content">
@@ -1016,6 +1075,7 @@ class SmartHeatingPanel extends HTMLElement {
     root.appendChild(wrap);
 
     // Events
+    wrap.querySelector('.btn-overview').addEventListener('click', () => this._goOverview());
     wrap.querySelector('.btn-logs').addEventListener('click', () => this._goLogs());
     wrap.querySelector('.btn-settings').addEventListener('click', () => this._openSettings());
     wrap.querySelector('.fab').addEventListener('click', () => this._openRoomEditor());
@@ -1023,6 +1083,111 @@ class SmartHeatingPanel extends HTMLElement {
       btn.addEventListener('click', () => this._setGlobalMode(btn.dataset.mode)));
     wrap.querySelectorAll('.room-card').forEach(card =>
       card.addEventListener('click', () => this._goRoom(card.dataset.roomId)));
+  }
+
+  // ── Overview ─────────────────────────────────────────────────────────────
+
+  _renderOverview(root) {
+    const g     = this._global;
+    const rooms = Object.values(this._rooms);
+    const mode  = g.mode;
+
+    // Outdoor temp
+    let outdoorTemp = '—';
+    if (g.weather_entity && this._hass.states[g.weather_entity]) {
+      const t = this._hass.states[g.weather_entity].attributes.temperature;
+      if (t != null) outdoorTemp = fmtTemp(t);
+    } else if (g.outdoor_temp_sensor && this._hass.states[g.outdoor_temp_sensor]) {
+      const s = this._hass.states[g.outdoor_temp_sensor];
+      if (!['unavailable','unknown'].includes(s.state)) outdoorTemp = fmtTemp(parseFloat(s.state));
+    }
+
+    // Presence
+    const presenceEntities = g.presence_entities || [];
+    const homeCount = presenceEntities.filter(id => {
+      const s = this._hass.states[id];
+      return s && s.state === 'home';
+    }).length;
+    const presenceText = presenceEntities.length
+      ? `${homeCount} / ${presenceEntities.length} zuhause`
+      : '— nicht konfiguriert';
+
+    const modeLabels = {
+      auto:   { icon: '🏠', label: 'Zuhause',  cls: '' },
+      away:   { icon: '🏃', label: 'Abwesend', cls: '' },
+      sleep:  { icon: '🌙', label: 'Nacht',    cls: '' },
+      summer: { icon: '☀️', label: 'Sommer',   cls: 'summer-mode' },
+    };
+
+    const modeBar = Object.entries(modeLabels).map(([key, m]) =>
+      `<button class="overview-mode-btn ${m.cls} ${mode === key ? 'active ' + m.cls : ''}" data-mode="${key}">
+        <span class="mode-icon">${m.icon}</span>${m.label}
+      </button>`
+    ).join('');
+
+    const summerNote = mode === 'summer'
+      ? `<div style="background:#e1f5fe;border-left:4px solid #0288d1;padding:10px 12px;border-radius:6px;font-size:13px;margin-bottom:16px;color:#01579b">
+           ☀️ <strong>Sommermodus aktiv</strong> — alle Räume auf Frostschutz ${fmtTemp(g.frost_protection_temp ?? 7)} geregelt. Zeitpläne und Boost werden ignoriert.
+         </div>`
+      : '';
+
+    const roomRows = rooms.length === 0
+      ? '<p style="color:var(--secondary-text-color);font-size:13px">Noch keine Räume konfiguriert.</p>'
+      : rooms.map(room => {
+          const cur   = this._currentTemp(room);
+          const tgt   = this._targetTemp(room);
+          const hs    = this._heatingState(room);
+          const badge = hs === 'heat' ? `<span class="badge badge-heating" style="font-size:11px">🔥 Heizend</span>`
+                      : hs === 'idle' ? `<span class="badge badge-idle" style="font-size:11px">✓ Bereit</span>`
+                      : '';
+          return `<div class="room-list-row" data-room-id="${room.id}">
+            <span class="room-list-name">${room.name}</span>
+            <span class="room-list-temps">${fmtTemp(cur)} → <strong>${fmtTemp(tgt)}</strong></span>
+            <span class="room-list-badge">${badge}</span>
+          </div>`;
+        }).join('');
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden';
+    wrap.innerHTML = `
+      <div class="sh-header">
+        <button class="sh-back">${ICON.back}</button>
+        <h1>Zentrale Steuerung</h1>
+      </div>
+      <div class="sh-content">
+        <div class="overview-section">
+          <h3>Modus</h3>
+          <div class="overview-mode-bar">${modeBar}</div>
+          ${summerNote}
+        </div>
+        <div class="overview-section">
+          <h3>Status</h3>
+          <div class="status-cards">
+            <div class="status-card">
+              <div class="status-card-label">Außentemperatur</div>
+              <div class="status-card-value">${outdoorTemp}</div>
+            </div>
+            <div class="status-card">
+              <div class="status-card-label">Anwesenheit</div>
+              <div class="status-card-value" style="font-size:15px">${presenceText}</div>
+            </div>
+          </div>
+        </div>
+        <div class="overview-section">
+          <h3>Räume</h3>
+          ${roomRows}
+        </div>
+      </div>
+    `;
+    root.appendChild(wrap);
+
+    wrap.querySelector('.sh-back').addEventListener('click', () => this._goDashboard());
+    wrap.querySelectorAll('.overview-mode-btn').forEach(btn =>
+      btn.addEventListener('click', () => this._setGlobalMode(btn.dataset.mode, true))
+    );
+    wrap.querySelectorAll('.room-list-row').forEach(row =>
+      row.addEventListener('click', () => this._goRoom(row.dataset.roomId))
+    );
   }
 
   // ── Logs view ────────────────────────────────────────────────────────────

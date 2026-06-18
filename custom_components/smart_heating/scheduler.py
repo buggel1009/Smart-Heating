@@ -271,6 +271,10 @@ class SmartHeatingScheduler:
         outdoor_temp: float | None,
     ) -> float | None:
 
+        # Priority 0: Summer mode → frost protection (overrides everything incl. boost)
+        if global_mode == "summer":
+            return float(data.get("global", {}).get("frost_protection_temp", 7.0))
+
         # Priority 1: Boost mode
         boost_end = self._boost.get(room_id)
         if boost_end:
@@ -336,8 +340,8 @@ class SmartHeatingScheduler:
     def _resolve_global_mode(self, data: dict) -> str:
         """Return effective mode; 'auto' falls back to 'away' if all presence entities are away."""
         mode = data.get("global", {}).get("mode", "auto")
-        if mode != "auto":
-            return mode
+        if mode not in ("auto",):
+            return mode  # summer / away / sleep are always literal
         g = data.get("global", {})
         entities: list[str] = [e for e in (g.get("presence_entities") or []) if e]
         if g.get("presence_entity"):  # backward compat

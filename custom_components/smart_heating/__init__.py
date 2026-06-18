@@ -42,6 +42,7 @@ _DEFAULT_DATA: dict[str, Any] = {
         "weather_entity": None,
         "outdoor_temp_sensor": None,
         "away_temp": 16.0,
+        "frost_protection_temp": 7.0,
     },
 }
 
@@ -86,7 +87,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "smart-heating-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.2.6",
+                "js_url": f"/{DOMAIN}-panel/smart-heating-panel.js?v=0.2.7",
             }
         },
         require_admin=False,
@@ -242,6 +243,7 @@ def _register_ws_api(hass: HomeAssistant) -> None:
         vol.Optional("weather_entity"): vol.Any(str, None),
         vol.Optional("outdoor_temp_sensor"): vol.Any(str, None),
         vol.Optional("away_temp"): vol.Coerce(float),
+        vol.Optional("frost_protection_temp"): vol.Coerce(float),
     })
     @websocket_api.async_response
     async def ws_set_global_mode(hass, connection, msg):
@@ -255,6 +257,8 @@ def _register_ws_api(hass: HomeAssistant) -> None:
             g["outdoor_temp_sensor"] = msg["outdoor_temp_sensor"]
         if "away_temp" in msg:
             g["away_temp"] = msg["away_temp"]
+        if "frost_protection_temp" in msg:
+            g["frost_protection_temp"] = msg["frost_protection_temp"]
         await _save(hass)
         _scheduler(hass).reload_listeners()
         # Evaluate immediately so mode change takes effect at once
